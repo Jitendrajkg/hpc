@@ -1,0 +1,71 @@
+  
+    7  yum install update -y
+   18  systemctl stop firewalld
+   19  systemctl disable firewalld
+   24  vim /etc/selinux/config 
+   25  setenforce 0
+   26  sestatus
+   27  init 6
+   31  vim /etc/hosts
+   32  yum install http://repos.openhpc.community/OpenHPC/2/EL_8/x86_64/ohpc-release-2-1.el8.x86_64.rpm
+   33  yum -y install ohpc-base
+   34  yum -y install ohpc-warewulf hwloc-ohpc
+   36  perl -pi -e "s/device = eth1/device = ens224/" /etc/warewulf/provision.conf
+   37  ip link set dev ens224 up
+   39  systemctl start httpd
+   40  systemctl enable httpd
+   41  systemctl enable dhcpd
+   43  systemctl enable tftp
+   44  systemctl restart tftp
+   45  systemctl restart httpd
+   48  systemctl restart xinetd
+   51  export CHROOT=/opt/ohpc/admin/images/rocky8.8
+   52  wwmkchroot -v rocky-8 $CHROOT
+   53  dnf -y --installroot $CHROOT install epel-release
+   54  cp -p /etc/yum.repos.d/OpenHPC*.repo $CHROOT/etc/yum.repos.d
+   55  yum -y --installroot=$CHROOT install ohpc-base-compute
+   56  cp -p /etc/resolv.conf $CHROOT/etc/resolv.conf
+   57  yum -y --installroot=$CHROOT install kernel-`uname -r`
+   58  yum -y --installroot=$CHROOT install lmod-ohpc
+   59  wwinit database
+   60  wwinit ssh_keys
+   62  ip r
+   63  echo "192.168.253.128:/home /home nfs nfsvers=3,nodev,nosuid 0 0" >> $CHROOT/etc/fstab
+   64  echo "192.168.253.128:/opt/ohpc/pub /opt/ohpc/pub nfs nfsvers=3,nodev 0 0" >> $CHROOT/etc/fstab
+   65  echo "/home *(rw,no_subtree_check,fsid=10,no_root_squash)" >> /etc/exports
+   66  echo "/opt/ohpc/pub *(ro,no_subtree_check,fsid=11)" >> /etc/exports
+   67  exportfs -a
+   68  systemctl restart nfs-server
+   69  systemctl enable nfs-server
+   70  systemctl restart rsyslog
+   72  echo 'module(load="imudp")' >> /etc/rsyslog.d/ohpc.conf
+   73  echo 'input(type="imudp" port="514")' >> /etc/rsyslog.d/ohpc.conf
+   74  systemctl restart rsyslog
+   75  echo "*.* @192.168.253.128:514" >> $CHROOT/etc/rsyslog.conf
+   76  echo "Target=\"192.168.253.128\" Protocol=\"udp\"" >> $CHROOT/etc/rsyslog.conf
+   77  perl -pi -e "s/^\*\.info/\\#\*\.info/" $CHROOT/etc/rsyslog.conf
+   78  perl -pi -e "s/^authpriv/\\#authpriv/" $CHROOT/etc/rsyslog.conf
+   80  perl -pi -e "s/^cron/\\#cron/" $CHROOT/etc/rsyslog.conf
+   81  perl -pi -e "s/^uucp/\\#uucp/" $CHROOT/etc/rsyslog.conf
+   82  yum -y install clustershell
+   83  wwsh file import /etc/passwd
+   84  wwsh file import /etc/group
+   85  wwsh file import /etc/shadow
+   86  export WW_CONF=/etc/warewulf/bootstrap.conf
+   87  echo "drivers += updates/kernel/" >> $WW_CONF
+   88  wwbootstrap `uname -r`
+   89  wwvnfs --chroot $CHROOT
+   90  ip r
+   91  echo "GATEWAYDEV=ens224" > /tmp/network.$$
+   92  wwsh -y file import /tmp/network.$$ --name network
+   93  wwsh -y file set network --path /etc/sysconfig/network --mode=0644 --uid=0
+   97  wwsh -y node new cn01 --ipaddr=192.168.253.129 --hwaddr=00:0C:29:11:88:36 -D ens224
+   98  wwsh -y provision set cn01 --vnfs=rocky8.8 --bootstrap=`uname -r` =dynamic_hosts,passwd,group,shadow,network
+   99  systemctl restart dhcpd
+  100  systemctl status dhcpd
+  102  wwsh pxe update
+  104  cat /etc/hosts
+  105  history > warewulf_cmds
+
+
+      wwsh node delete cn01
